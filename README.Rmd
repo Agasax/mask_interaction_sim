@@ -1,0 +1,177 @@
+---
+title: "Interaction analysis"
+author: "Lars Mølgaard Saxhaug"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(brms)
+library(tidybayes)
+library(here)
+```
+
+```{r data_import}
+df <- tribble(
+ ~age,      ~n,     ~intervention_prevalence_ratio , ~control_prevalence,
+ "=< 40",  147954,   0.977,                            0.0055,
+ "40-50",  36002,    1.003,                            0.0095,
+ "50-60",  24282,    0.768,                            0.0108,
+ ">60",    28102,    0.669,                            0.0103   # n reduced to from 28103 for simplicity
+   
+) %>% 
+  mutate(control_n=n/2,
+         intervention_n=n/2,
+         control_events=round(control_n*control_prevalence),
+         intervention_events=round(intervention_n*control_prevalence*intervention_prevalence_ratio)) %>% 
+  select(age,starts_with(c("control","intervention")),-contains(c("ratio","prevalence"))) %>% 
+  pivot_longer(cols = starts_with(c("control","intervention")),names_to=c("group","variable"),names_sep = "_") %>% 
+  pivot_wider(names_from = "variable",values_from = "value") %>% 
+  mutate(across(age,~ordered(.x,levels=c("=< 40","40-50","50-60",">60"))),across(group,as.factor)) %>% 
+  mutate(age_unord=factor(age,ordered = FALSE))
+```
+
+Frequentist test for interaction
+```{r frequentist}
+
+fmod1 <- glm(cbind(events,n-events)~group,family = binomial,data = df)
+summary(fmod1)
+fmod2 <- glm(cbind(events,n-events)~group+group:factor(age,ordered = FALSE),family = binomial,data = df)
+summary(fmod2)
+
+anova(fmod1,fmod2,test = "LRT")
+
+```
+Model 1: simple for overall effect without interaction with age
+Model 1_b: added age specific intercept
+Model 2: Interaction with categorical age
+Model 3: Interaction with age as monotonic effect
+Model 3_b: Prior ruling out negatie effect
+```{r fit}
+# simple model for overall effect
+mod1 <- brm(events|trials(n)~group,family = binomial,data = df,file = here("fits","mod1.rds"),file_refit = "on_change",save_pars = save_pars(all = TRUE))
+mod1
+plot(mod1)
+# added age specific intercept
+mod1_b <- brm(events|trials(n)~group+age,family = binomial,data = df,file = here("fits","mod1_b.rds"),file_refit = "on_change",save_pars = save_pars(all = TRUE))
+mod1_b
+plot(mod1_b)
+# model with added interaction with categorical age
+mod2 <- brm(events|trials(n)~group*age,family = binomial,data = df,file = here("fits","mod2.rds"),file_refit = "on_change",save_pars = save_pars(all = TRUE))
+mod2
+plot(mod2)
+
+# model with added interaction with age as monotonic effect
+mod3 <- brm(events|trials(n)~group*mo(age),family = binomial,data = df,file = here("fits","mod3.rds"),file_refit = "on_change",save_pars = save_pars(all = TRUE))
+mod3
+plot(mod3)
+
+# as model 3 but with prior ruling out negative effect
+mod3_b <- brm(events|trials(n)~group*mo(age),family = binomial,data = df,file = here("fits","mod3_b.rds"),file_refit = "on_change",save_pars = save_pars(all = TRUE),
+              prior = prior(normal(0,1),class="b",ub=0))
+mod3_b
+plot(mod3_b)
+```
+
+
+```{r model_comparison}
+mod1 <- mod1 %>% add_criterion("loo", moment_match=TRUE,reloo=TRUE)
+mod1_b <- mod1_b %>% add_criterion("loo", moment_match=TRUE,reloo=TRUE)
+mod2 <- mod2 %>% add_criterion("loo", moment_match=TRUE,reloo=TRUE)
+mod3 <- mod3 %>% add_criterion("loo", moment_match=TRUE,reloo=TRUE)
+mod3_b <- mod3_b %>% add_criterion("loo", moment_match=TRUE,reloo=TRUE)
+l <- loo_compare(mod1,mod1_b,mod2,mod3)
+
+cbind(loo_diff = l[, 1] * -2,
+      se       = l[, 2] *  2)
+model_weights(mod1,mod1_b,mod2,mod3,weights = "loo")
+
+
+
+```
+
+```{r}
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod2,scale="linear") %>% 
+  compare_levels(.value,by = group) %>%
+  #compare_levels(.value,by=age,comparison="pairwise") %>% 
+  mutate(or=exp(.value)) %>% 
+  median_hdi(or)
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod3_b,scale="linear") %>% 
+  compare_levels(.value,by = group) %>%
+  compare_levels(.value,by=age,comparison="pairwise") %>% 
+  mutate(or=exp(.value)) %>% 
+  median_hdi(or)
+```
+
+```{r plot_interaction}
+df %>% 
+  modelr::data_grid(group,n=1) %>% 
+  add_linpred_draws(mod1,scale="linear") %>% 
+  compare_levels(.value,by = group) %>%
+  mutate(or=exp(.value)) %>% 
+  ggplot(aes(x=or,fill=after_stat(ifelse(x>1,"over","under"))))+
+  stat_halfeye()+
+  scale_fill_manual(values=c("pink","lightblue"))+
+  theme_tidybayes()+
+  theme(legend.position = "none")+
+  labs(title = "Model 1",
+       caption = "@load_dependent")
+df %>% 
+  modelr::data_grid(group,age,n=1) %>% 
+  add_linpred_draws(mod1,scale="linear") %>% 
+  compare_levels(.value,by = group) %>%
+  mutate(or=exp(.value)) %>% 
+  ggplot(aes(x=or,y=age,fill=after_stat(ifelse(x>1,"over","under"))))+
+  stat_halfeye()+
+  scale_fill_manual(values=c("pink","lightblue"))+
+  theme_tidybayes()+
+  theme(legend.position = "none")+
+  labs(title = "Model 1_b",
+       caption = "@load_dependent")
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod2,scale="linear") %>% 
+  compare_levels(.value,by = group) %>%
+  #compare_levels(.value,by=age,comparison="pairwise") %>% 
+  mutate(or=exp(.value)) %>% 
+  ggplot(aes(x=or,y=age,fill=after_stat(ifelse(x>1,"over","under"))))+
+  stat_halfeye()+
+  scale_fill_manual(values=c("pink","lightblue"))+
+  theme_tidybayes()+
+  theme(legend.position = "none")+
+  labs(title = "Model 2",
+       caption = "@load_dependent")
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod3,scale="linear") %>% 
+  compare_levels(.value,by = group) %>%
+  mutate(or=exp(.value)) %>% 
+  compare_levels(.value,by=age,comparison="pairwise") %>% 
+  ggplot(aes(x=.value,y=age,fill=after_stat(ifelse(x>0,"over","under"))))+
+  stat_halfeye()+
+  scale_fill_manual(values=c("pink","lightblue"))+
+  theme_tidybayes()+
+  theme(legend.position = "none")+
+  labs(title = "Model 3",
+       caption = "@load_dependent")
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod3_b,scale="linear") %>% 
+  compare_levels(.value,by = group) %>%
+  mutate(or=exp(.value)) %>% 
+  #compare_levels(.value,by=age,comparison="pairwise") %>% 
+  ggplot(aes(x=.value,y=age,fill=after_stat(ifelse(x>1,"over","under"))))+
+  stat_halfeye()+
+  scale_fill_manual(values=c("pink","lightblue"))+
+  theme_tidybayes()+
+  theme(legend.position = "none")+
+  labs(title = "Model 3_b (prior ruling out neg effect)",
+       caption = "@load_dependent")
+
+```
+
