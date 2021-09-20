@@ -161,31 +161,14 @@ cbind(loo_diff = l[, 1] * -2,
       se       = l[, 2] *  2) %>% 
   knitr::kable()
 ```
-
+Model weight comparison
 ```{r model_comparison_weights}
 model_weights(mod1_a,mod1_b,mod2_a,mod3_a,mod3_b,weights = "loo") %>% round(digits = 6) %>% 
   knitr::kable()
 
 ```
 
-```{r}
-df %>% 
-  modelr::data_grid(age,group,n=1) %>% 
-  add_linpred_draws(mod2_a,scale="response") %>% 
-  compare_levels(.value,by = group,fun=`/`) %>%
-  median_hdi(.value) %>% 
-  knitr::kable()
-```
 
-```{r}
-df %>% 
-  modelr::data_grid(age,group,n=1) %>% 
-  add_linpred_draws(mod3_b,scale="response") %>% 
-  compare_levels(.value,by = group,fun=`/`) %>%
-  compare_levels(.value,by=age,comparison="pairwise") %>% 
-  median_hdi() %>% 
-  knitr::kable()
-```
 
 ```{r plot_1a}
 df %>% 
@@ -275,15 +258,66 @@ df %>%
 
 ```
 
+Pairwise difference in effect from model 2
+```{r difference_categorical}
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod2_a,scale="response") %>% 
+  compare_levels(.value,by = group,fun = `/`) %>%
+  compare_levels(.value,by = age,comparison="pairwise",fun = `/`) %>% 
+  ggplot(aes(x=.value,y=age,fill=after_stat(x>1)))+ 
+  stat_slab(position="dodge",scale=0.6)+
+  stat_dotsinterval(side="bottom", quantiles=100,position ="dodge",scale=0.6,fill="grey")+
+  scale_fill_manual(values=c("lightblue","pink"))+
+  scale_y_discrete(name = "Age group")+
+  scale_x_continuous(name="Difference in relative risk")+
+  theme_tidybayes()+
+  theme(legend.position = "none")+
+  labs(title = "Difference in relative risk from intervention between age groups\n(categorical age)",
+       caption = "@load_dependent")
+```
+Pairwise difference in effect from model 3 b
+```{r difference_monotonic}
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod3_b,scale="response") %>% 
+  compare_levels(.value,by = group,fun = `/`) %>%
+  compare_levels(.value,by = age,comparison="pairwise",fun = `/`) %>% 
+  ggplot(aes(x=.value,y=age,fill=after_stat(x>1)))+ 
+  stat_slab(position="dodge",scale=0.6)+
+  stat_dotsinterval(side="bottom", quantiles=100,position ="dodge",scale=0.6,fill="grey")+
+  scale_fill_manual(values=c("lightblue","pink"))+
+  scale_y_discrete(name = "Age group")+
+  scale_x_continuous(name="Difference in relative risk")+
+  theme_tidybayes()+
+  theme(legend.position = "none")+
+  labs(title = "Difference in relative risk from intervention between age groups\n(monotonic age)",
+       caption = "@load_dependent")
+```
+Posterior probability of difference according to model 2 a 
+```{r post_prob}
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod2_a,scale="response") %>% 
+  compare_levels(.value,by = group,fun=`/`) %>%
+  compare_levels(.value,by=age,comparison="pairwise") %>% 
+  summarise(`Posterior probability of difference in effect`=mean(.value<0)) %>% 
+  ungroup() %>% 
+  select(-c(group,n)) %>% 
+  knitr::kable()
+```
+
 ```{r plot_interaction_4}
 df %>% 
   modelr::data_grid(age,group,n=1) %>% 
   add_linpred_draws(mod4,scale="response") %>% 
   compare_levels(.value,by = group,fun = `/`) %>%
-  mutate(or=exp(.value)) %>% 
-  ggplot(aes(x=.value,y=age,fill=after_stat(ifelse(x>1,"over","under"))))+
-  stat_halfeye()+
-  scale_fill_manual(values=c("pink","lightblue"))+
+  ggplot(aes(x=.value,y=age,fill=after_stat(x>1)))+ 
+  stat_slab(position="dodge",scale=0.6)+
+  stat_dotsinterval(side="bottom", quantiles=100,position ="dodge",scale=0.6,fill="grey")+
+  scale_fill_manual(values=c("lightblue","pink"))+
+  scale_y_discrete(name = "Age group")+
+  scale_x_continuous(name="Relative risk")+
   theme_tidybayes()+
   theme(legend.position = "none")+
   labs(title = "Model 4 (prior ruling out neg effect)",

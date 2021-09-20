@@ -478,6 +478,8 @@ cbind(loo_diff = l[, 1] * -2,
 | mod1\_b |  17.40600 |  4.777644 |
 | mod1\_a | 193.66049 | 69.477171 |
 
+Model weight comparison
+
 ``` r
 model_weights(mod1_a,mod1_b,mod2_a,mod3_a,mod3_b,weights = "loo") %>% round(digits = 6) %>% 
   knitr::kable()
@@ -490,41 +492,6 @@ model_weights(mod1_a,mod1_b,mod2_a,mod3_a,mod3_b,weights = "loo") %>% round(digi
 | mod2\_a | 0.001283 |
 | mod3\_a | 0.000644 |
 | mod3\_b | 0.997907 |
-
-``` r
-df %>% 
-  modelr::data_grid(age,group,n=1) %>% 
-  add_linpred_draws(mod2_a,scale="response") %>% 
-  compare_levels(.value,by = group,fun=`/`) %>%
-  median_hdi(.value) %>% 
-  knitr::kable()
-```
-
-| age      | group                  |   n |    .value |    .lower |    .upper | .width | .point | .interval |
-|:---------|:-----------------------|----:|----------:|----------:|----------:|-------:|:-------|:----------|
-| =&lt; 40 | intervention / control |   1 | 0.9710735 | 0.8296878 | 1.0997322 |   0.95 | median | hdi       |
-| 40-50    | intervention / control |   1 | 1.0077110 | 0.8018062 | 1.2272018 |   0.95 | median | hdi       |
-| 50-60    | intervention / control |   1 | 0.7773344 | 0.5930809 | 0.9832094 |   0.95 | median | hdi       |
-| &gt;60   | intervention / control |   1 | 0.6744464 | 0.5109744 | 0.8531188 |   0.95 | median | hdi       |
-
-``` r
-df %>% 
-  modelr::data_grid(age,group,n=1) %>% 
-  add_linpred_draws(mod3_b,scale="response") %>% 
-  compare_levels(.value,by = group,fun=`/`) %>%
-  compare_levels(.value,by=age,comparison="pairwise") %>% 
-  median_hdi() %>% 
-  knitr::kable()
-```
-
-| age               | group                  |   n |     .value |     .lower |     .upper | .width | .point | .interval |
-|:------------------|:-----------------------|----:|-----------:|-----------:|-----------:|-------:|:-------|:----------|
-| &gt;60 - =&lt; 40 | intervention / control |   1 | -0.3462784 | -0.5452315 | -0.1549620 |   0.95 | median | hdi       |
-| &gt;60 - 40-50    | intervention / control |   1 | -0.2825715 | -0.4696557 | -0.1066129 |   0.95 | median | hdi       |
-| &gt;60 - 50-60    | intervention / control |   1 | -0.1380332 | -0.2942072 | -0.0018091 |   0.95 | median | hdi       |
-| 40-50 - =&lt; 40  | intervention / control |   1 | -0.0495722 | -0.1683786 |  0.0004384 |   0.95 | median | hdi       |
-| 50-60 - =&lt; 40  | intervention / control |   1 | -0.1957441 | -0.3720265 | -0.0340859 |   0.95 | median | hdi       |
-| 50-60 - 40-50     | intervention / control |   1 | -0.1303420 | -0.2840577 | -0.0005065 |   0.95 | median | hdi       |
 
 ``` r
 df %>% 
@@ -623,15 +590,84 @@ df %>%
 
 ![](README_files/figure-gfm/plot_interaction_2b-1.png)<!-- -->
 
+Pairwise difference in effect from model 2
+
+``` r
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod2_a,scale="response") %>% 
+  compare_levels(.value,by = group,fun = `/`) %>%
+  compare_levels(.value,by = age,comparison="pairwise",fun = `/`) %>% 
+  ggplot(aes(x=.value,y=age,fill=after_stat(x>1)))+ 
+  stat_slab(position="dodge",scale=0.6)+
+  stat_dotsinterval(side="bottom", quantiles=100,position ="dodge",scale=0.6,fill="grey")+
+  scale_fill_manual(values=c("lightblue","pink"))+
+  scale_y_discrete(name = "Age group")+
+  scale_x_continuous(name="Difference in relative risk")+
+  theme_tidybayes()+
+  theme(legend.position = "none")+
+  labs(title = "Difference in relative risk from intervention between age groups\n(categorical age)",
+       caption = "@load_dependent")
+```
+
+![](README_files/figure-gfm/difference_categorical-1.png)<!-- -->
+Pairwise difference in effect from model 3 b
+
+``` r
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod3_b,scale="response") %>% 
+  compare_levels(.value,by = group,fun = `/`) %>%
+  compare_levels(.value,by = age,comparison="pairwise",fun = `/`) %>% 
+  ggplot(aes(x=.value,y=age,fill=after_stat(x>1)))+ 
+  stat_slab(position="dodge",scale=0.6)+
+  stat_dotsinterval(side="bottom", quantiles=100,position ="dodge",scale=0.6,fill="grey")+
+  scale_fill_manual(values=c("lightblue","pink"))+
+  scale_y_discrete(name = "Age group")+
+  scale_x_continuous(name="Difference in relative risk")+
+  theme_tidybayes()+
+  theme(legend.position = "none")+
+  labs(title = "Difference in relative risk from intervention between age groups\n(monotonic age)",
+       caption = "@load_dependent")
+```
+
+![](README_files/figure-gfm/difference_monotonic-1.png)<!-- -->
+Posterior probability of difference according to model 2 a
+
+``` r
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod2_a,scale="response") %>% 
+  compare_levels(.value,by = group,fun=`/`) %>%
+  compare_levels(.value,by=age,comparison="pairwise") %>% 
+  summarise(`Posterior probability of difference in effect`=mean(.value<0)) %>% 
+  ungroup() %>% 
+  select(-c(group,n)) %>% 
+  knitr::kable()
+```
+
+    ## `summarise()` has grouped output by 'age', 'group'. You can override using the `.groups` argument.
+
+| age               | Posterior probability of difference in effect |
+|:------------------|----------------------------------------------:|
+| &gt;60 - =&lt; 40 |                                       0.99575 |
+| &gt;60 - 40-50    |                                       0.99150 |
+| &gt;60 - 50-60    |                                       0.77675 |
+| 40-50 - =&lt; 40  |                                       0.38175 |
+| 50-60 - =&lt; 40  |                                       0.93450 |
+| 50-60 - 40-50     |                                       0.93600 |
+
 ``` r
 df %>% 
   modelr::data_grid(age,group,n=1) %>% 
   add_linpred_draws(mod4,scale="response") %>% 
   compare_levels(.value,by = group,fun = `/`) %>%
-  mutate(or=exp(.value)) %>% 
-  ggplot(aes(x=.value,y=age,fill=after_stat(ifelse(x>1,"over","under"))))+
-  stat_halfeye()+
-  scale_fill_manual(values=c("pink","lightblue"))+
+  ggplot(aes(x=.value,y=age,fill=after_stat(x>1)))+ 
+  stat_slab(position="dodge",scale=0.6)+
+  stat_dotsinterval(side="bottom", quantiles=100,position ="dodge",scale=0.6,fill="grey")+
+  scale_fill_manual(values=c("lightblue","pink"))+
+  scale_y_discrete(name = "Age group")+
+  scale_x_continuous(name="Relative risk")+
   theme_tidybayes()+
   theme(legend.position = "none")+
   labs(title = "Model 4 (prior ruling out neg effect)",
