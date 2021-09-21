@@ -30,71 +30,8 @@ Frequentist test of interaction
 
 ``` r
 # treatment effect only
-fmod1 <- glm(cbind(events,n-events)~group,family = binomial,data = df)
-summary(fmod1)
-```
-
-    ## 
-    ## Call:
-    ## glm(formula = cbind(events, n - events) ~ group, family = binomial, 
-    ##     data = df)
-    ## 
-    ## Deviance Residuals: 
-    ##     Min       1Q   Median       3Q      Max  
-    ## -5.7836  -0.5333   2.9124   4.1291   4.7674  
-    ## 
-    ## Coefficients:
-    ##                   Estimate Std. Error  z value Pr(>|z|)    
-    ## (Intercept)       -4.92270    0.03434 -143.337   <2e-16 ***
-    ## groupintervention -0.10687    0.04990   -2.142   0.0322 *  
-    ## ---
-    ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-    ## 
-    ## (Dispersion parameter for binomial family taken to be 1)
-    ## 
-    ##     Null deviance: 129.05  on 7  degrees of freedom
-    ## Residual deviance: 124.46  on 6  degrees of freedom
-    ## AIC: 184.43
-    ## 
-    ## Number of Fisher Scoring iterations: 4
-
-``` r
-# treatment and age effect, but no interaction
-fmod2 <- glm(cbind(events,n-events)~group+age,family = binomial,data = df)
-summary(fmod2)
-```
-
-    ## 
-    ## Call:
-    ## glm(formula = cbind(events, n - events) ~ group + age, family = binomial, 
-    ##     data = df)
-    ## 
-    ## Deviance Residuals: 
-    ##       1        2        3        4        5        6        7        8  
-    ## -0.8279   0.8608  -0.7224   0.7474   0.7967  -0.8612   1.5319  -1.6950  
-    ## 
-    ## Coefficients:
-    ##                   Estimate Std. Error  z value Pr(>|z|)    
-    ## (Intercept)       -5.15631    0.04252 -121.272  < 2e-16 ***
-    ## groupintervention -0.10693    0.04991   -2.142   0.0322 *  
-    ## age40-50           0.56434    0.06475    8.716  < 2e-16 ***
-    ## age50-60           0.56722    0.07484    7.579 3.48e-14 ***
-    ## age>60             0.46236    0.07360    6.282 3.35e-10 ***
-    ## ---
-    ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-    ## 
-    ## (Dispersion parameter for binomial family taken to be 1)
-    ## 
-    ##     Null deviance: 129.0543  on 7  degrees of freedom
-    ## Residual deviance:   9.1027  on 3  degrees of freedom
-    ## AIC: 75.074
-    ## 
-    ## Number of Fisher Scoring iterations: 4
-
-``` r
-# treatment, age and interaction effect
-fmod3 <- glm(cbind(events,n-events)~group*age,family = binomial,data = df)
-summary(fmod3)
+freq_mod <- glm(cbind(events,n-events)~group*age,family = binomial,data = df)
+summary(freq_mod)
 ```
 
     ## 
@@ -126,23 +63,28 @@ summary(fmod3)
     ## 
     ## Number of Fisher Scoring iterations: 3
 
-Model that includes interaction term is a significantly better fit to
-the data than the base model, but a smaller incremental improvement than
-including age specific intercepts
+Test for interaction using type 2 anova, resulting in a significant
+interaction between intervention (group) and age at a nominal alpha
+level = 0.05
 
 ``` r
-anova(fmod1,fmod2,fmod3,test = "LRT")
+car::Anova(freq_mod,type=2)
 ```
 
-    ## Analysis of Deviance Table
+    ## Registered S3 methods overwritten by 'car':
+    ##   method                          from
+    ##   influence.merMod                lme4
+    ##   cooks.distance.influence.merMod lme4
+    ##   dfbeta.influence.merMod         lme4
+    ##   dfbetas.influence.merMod        lme4
+
+    ## Analysis of Deviance Table (Type II tests)
     ## 
-    ## Model 1: cbind(events, n - events) ~ group
-    ## Model 2: cbind(events, n - events) ~ group + age
-    ## Model 3: cbind(events, n - events) ~ group * age
-    ##   Resid. Df Resid. Dev Df Deviance Pr(>Chi)    
-    ## 1         6    124.461                         
-    ## 2         3      9.103  3  115.358  < 2e-16 ***
-    ## 3         0      0.000  3    9.103  0.02796 *  
+    ## Response: cbind(events, n - events)
+    ##           LR Chisq Df Pr(>Chisq)    
+    ## group        4.596  1    0.03205 *  
+    ## age        115.358  3    < 2e-16 ***
+    ## group:age    9.103  3    0.02796 *  
     ## ---
     ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
@@ -151,9 +93,27 @@ anova(fmod1,fmod2,fmod3,test = "LRT")
 Priors:
 
 ``` r
-prior_base <- prior(normal(0,1),class="b")
+prior_base <- prior(normal(0,1),class="b") # prior for base and categorical age effect and interaction
+prior_base %>% 
+  tibble() %>% 
+  parse_dist(prior) %>% 
+  ggplot(aes(y=prior,dist=.dist,args=.args,fill=after_stat(x>0)))+
+  stat_dist_halfeye()+
+  theme_tidybayes()+
+  scale_x_continuous(name="Log-odds (logit) scale")+
+  scale_fill_manual(values=c("lightblue","pink"))+
+  labs(title = "Prior distribution")+
+  theme(legend.position = "none",axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+```
+
+![](README_files/figure-gfm/priors-1.png)<!-- -->
+
+``` r
 prior_mo <- prior(normal(0,1),class="b")+
-            prior(dirichlet(1),class="simo",coef="moage1")
+            prior(dirichlet(1),class="simo",coef="moage1") # prior for monotonic 
+
 prior_mo_interaction <-prior(normal(0,1),class="b")+
             prior(dirichlet(1),class="simo",coef="moage1")+
             prior(dirichlet(1), class= "simo", coef="moage:groupintervention1")
@@ -369,20 +329,6 @@ plot(mod3_b)
 ![](README_files/figure-gfm/fit_3b-1.png)<!-- -->
 
 ``` r
-get_variables(mod3_b)
-```
-
-    ##  [1] "b_Intercept"                      "b_groupintervention"             
-    ##  [3] "bsp_moage"                        "bsp_moage:groupintervention"     
-    ##  [5] "Intercept"                        "simo_moage1[1]"                  
-    ##  [7] "simo_moage1[2]"                   "simo_moage1[3]"                  
-    ##  [9] "simo_moage:groupintervention1[1]" "simo_moage:groupintervention1[2]"
-    ## [11] "simo_moage:groupintervention1[3]" "lp__"                            
-    ## [13] "accept_stat__"                    "stepsize__"                      
-    ## [15] "treedepth__"                      "n_leapfrog__"                    
-    ## [17] "divergent__"                      "energy__"
-
-``` r
 pairs(mod3_b)
 ```
 
@@ -527,7 +473,7 @@ df %>%
   scale_x_continuous(name="Relative risk")+
   theme_tidybayes()+
   theme(legend.position = "none")+
-  labs(title = "Model 1 b: age specific infection risk only ",
+  labs(title = "Model 1 b: Intervention effect given (categorical) age specific infection risk\nWithout interaction ",
 caption = "@load_dependent")
 ```
 
@@ -546,11 +492,46 @@ df %>%
   scale_x_continuous(name="Relative risk")+
   theme_tidybayes()+
   theme(legend.position = "none")+
-  labs(title = "Model 2: age specific infection risk \nand interaction with intervention ",
+  labs(title = "Model 2: Main effect from intervention, (categorical) age specific infection risk \nand interaction between them",
        caption = "@load_dependent")
 ```
 
-![](README_files/figure-gfm/plot_interaction_2a-1.png)<!-- -->
+![](README_files/figure-gfm/plot_interaction_2a-1.png)<!-- --> Pairwise
+difference in effect from model 2
+
+``` r
+mod2_a_diff <- df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod2_a,scale="response") %>% 
+  compare_levels(.value,by = group,fun=`/`) %>%
+  compare_levels(.value,by=age,comparison="pairwise") %>% 
+  summarise(post=scales::percent( mean(.value<0),accuracy = .1)) %>% 
+  ungroup() %>% 
+  select(-c(n,group))
+```
+
+    ## `summarise()` has grouped output by 'age', 'group'. You can override using the `.groups` argument.
+
+``` r
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod2_a,scale="response") %>% 
+  compare_levels(.value,by = group,fun = `/`) %>%
+  compare_levels(.value,by = age,comparison="pairwise") %>% 
+  ggplot(aes(x=.value,y=age,fill=after_stat(x>0)))+ 
+  stat_slab(position="dodge",scale=0.6)+
+  stat_dotsinterval(side="bottom", quantiles=100,position ="dodge",scale=0.6,fill="grey")+
+  geom_text(aes(y=age,label=post,x=-0.8),data = mod2_a_diff,inherit.aes = FALSE)+
+  scale_fill_manual(values=c("lightblue","pink"))+
+  scale_y_discrete(name = "Age group")+
+  scale_x_continuous(name="Difference in relative risk")+
+  theme_tidybayes()+
+  theme(legend.position = "none")+
+  labs(title = "Difference in relative risk from intervention between age categories\nPosterior probability of more positive effect in left-hand group",
+       caption = "@load_dependent")
+```
+
+![](README_files/figure-gfm/difference_categorical-1.png)<!-- -->
 
 ``` r
 df %>% 
@@ -588,74 +569,45 @@ df %>%
        caption = "@load_dependent")
 ```
 
-![](README_files/figure-gfm/plot_interaction_2b-1.png)<!-- -->
+![](README_files/figure-gfm/plot_interaction_3b-1.png)<!-- -->
 
-Pairwise difference in effect from model 2
+Pairwise difference in effect from model 3 b, the modelled monotonic
+interaction assumes higher effect with higher age, hence large
+posteroior probability of difference between age groups
 
 ``` r
-df %>% 
+mod3_b_diff <- df %>% 
   modelr::data_grid(age,group,n=1) %>% 
-  add_linpred_draws(mod2_a,scale="response") %>% 
-  compare_levels(.value,by = group,fun = `/`) %>%
-  compare_levels(.value,by = age,comparison="pairwise",fun = `/`) %>% 
-  ggplot(aes(x=.value,y=age,fill=after_stat(x>1)))+ 
-  stat_slab(position="dodge",scale=0.6)+
-  stat_dotsinterval(side="bottom", quantiles=100,position ="dodge",scale=0.6,fill="grey")+
-  scale_fill_manual(values=c("lightblue","pink"))+
-  scale_y_discrete(name = "Age group")+
-  scale_x_continuous(name="Difference in relative risk")+
-  theme_tidybayes()+
-  theme(legend.position = "none")+
-  labs(title = "Difference in relative risk from intervention between age groups\n(categorical age)",
-       caption = "@load_dependent")
+  add_linpred_draws(mod3_b,scale="response") %>% 
+  compare_levels(.value,by = group,fun=`/`) %>%
+  compare_levels(.value,by=age,comparison="pairwise") %>% 
+  summarise(post=scales::percent( mean(.value<0),accuracy = .1)) %>% 
+  ungroup() %>% 
+  select(-c(n,group))
 ```
 
-![](README_files/figure-gfm/difference_categorical-1.png)<!-- -->
-Pairwise difference in effect from model 3 b
+    ## `summarise()` has grouped output by 'age', 'group'. You can override using the `.groups` argument.
 
 ``` r
 df %>% 
   modelr::data_grid(age,group,n=1) %>% 
   add_linpred_draws(mod3_b,scale="response") %>% 
   compare_levels(.value,by = group,fun = `/`) %>%
-  compare_levels(.value,by = age,comparison="pairwise",fun = `/`) %>% 
+  compare_levels(.value,by = age,comparison="pairwise") %>% 
   ggplot(aes(x=.value,y=age,fill=after_stat(x>1)))+ 
   stat_slab(position="dodge",scale=0.6)+
   stat_dotsinterval(side="bottom", quantiles=100,position ="dodge",scale=0.6,fill="grey")+
+  geom_text(aes(y=age,label=post,x=-0.6),data = mod3_b_diff,inherit.aes = FALSE)+
   scale_fill_manual(values=c("lightblue","pink"))+
   scale_y_discrete(name = "Age group")+
   scale_x_continuous(name="Difference in relative risk")+
   theme_tidybayes()+
   theme(legend.position = "none")+
-  labs(title = "Difference in relative risk from intervention between age groups\n(monotonic age)",
+  labs(title = "Difference in relative risk from intervention between age groups\ngiven monontonic effect\nPosterior probability of more positive effect in left-hand group",
        caption = "@load_dependent")
 ```
 
 ![](README_files/figure-gfm/difference_monotonic-1.png)<!-- -->
-Posterior probability of difference according to model 2 a
-
-``` r
-df %>% 
-  modelr::data_grid(age,group,n=1) %>% 
-  add_linpred_draws(mod2_a,scale="response") %>% 
-  compare_levels(.value,by = group,fun=`/`) %>%
-  compare_levels(.value,by=age,comparison="pairwise") %>% 
-  summarise(`Posterior probability of difference in effect`=mean(.value<0)) %>% 
-  ungroup() %>% 
-  select(-c(group,n)) %>% 
-  knitr::kable()
-```
-
-    ## `summarise()` has grouped output by 'age', 'group'. You can override using the `.groups` argument.
-
-| age               | Posterior probability of difference in effect |
-|:------------------|----------------------------------------------:|
-| &gt;60 - =&lt; 40 |                                       0.99575 |
-| &gt;60 - 40-50    |                                       0.99150 |
-| &gt;60 - 50-60    |                                       0.77675 |
-| 40-50 - =&lt; 40  |                                       0.38175 |
-| 50-60 - =&lt; 40  |                                       0.93450 |
-| 50-60 - 40-50     |                                       0.93600 |
 
 ``` r
 df %>% 

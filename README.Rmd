@@ -37,29 +37,17 @@ df <- tribble(
 
 Frequentist test of interaction
 
-```{r freq_fit1}
+```{r freq_fit}
 # treatment effect only
-fmod1 <- glm(cbind(events,n-events)~group,family = binomial,data = df)
-summary(fmod1)
+freq_mod <- glm(cbind(events,n-events)~group*age,family = binomial,data = df)
+summary(freq_mod)
 
 ```
 
-```{r freq_fit2}
-# treatment and age effect, but no interaction
-fmod2 <- glm(cbind(events,n-events)~group+age,family = binomial,data = df)
-summary(fmod2)
-```
+Test for interaction using type 2 anova, resulting in a significant interaction between intervention (group) and age at a nominal alpha level = 0.05
+```{r freq_interaction_test}
 
-```{r freq_fit3}
-# treatment, age and interaction effect
-fmod3 <- glm(cbind(events,n-events)~group*age,family = binomial,data = df)
-summary(fmod3)
-```
-
-Model that includes interaction term is a significantly better fit to the data than the base model, but a smaller incremental improvement than including age specific intercepts
-
-```{r freq_compare}
-anova(fmod1,fmod2,fmod3,test = "LRT")
+car::Anova(freq_mod,type=2)
 
 ```
 
@@ -68,9 +56,24 @@ anova(fmod1,fmod2,fmod3,test = "LRT")
 Priors:
 
 ```{r priors}
-prior_base <- prior(normal(0,1),class="b")
+prior_base <- prior(normal(0,1),class="b") # prior for base and categorical age effect and interaction
+prior_base %>% 
+  tibble() %>% 
+  parse_dist(prior) %>% 
+  ggplot(aes(y=prior,dist=.dist,args=.args,fill=after_stat(x>0)))+
+  stat_dist_halfeye()+
+  theme_tidybayes()+
+  scale_x_continuous(name="Log-odds (logit) scale")+
+  scale_fill_manual(values=c("lightblue","pink"))+
+  labs(title = "Prior distribution")+
+  theme(legend.position = "none",axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+  
+  
 prior_mo <- prior(normal(0,1),class="b")+
-            prior(dirichlet(1),class="simo",coef="moage1")
+            prior(dirichlet(1),class="simo",coef="moage1") # prior for monotonic 
+
 prior_mo_interaction <-prior(normal(0,1),class="b")+
             prior(dirichlet(1),class="simo",coef="moage1")+
             prior(dirichlet(1), class= "simo", coef="moage:groupintervention1")
@@ -125,7 +128,7 @@ Model 3_b: Interaction between monotonic age effect and intervention
 mod3_b <- brm(events|trials(n)~group*mo(age),family = binomial,data = df,file = here("fits","mod3_c.rds"),file_refit = "on_change",save_pars = save_pars(all = TRUE),prior = prior_mo )
 mod3_b
 plot(mod3_b)
-get_variables(mod3_b)
+
 pairs(mod3_b)
 mod3_b %>% 
   spread_draws(`b_groupintervention`,`bsp_moage:groupintervention` ) %>% 
@@ -202,7 +205,7 @@ df %>%
   scale_x_continuous(name="Relative risk")+
   theme_tidybayes()+
   theme(legend.position = "none")+
-  labs(title = "Model 1 b: age specific infection risk only ",
+  labs(title = "Model 1 b: Intervention effect given (categorical) age specific infection risk\nWithout interaction ",
 caption = "@load_dependent")
 ```
 
@@ -219,7 +222,36 @@ df %>%
   scale_x_continuous(name="Relative risk")+
   theme_tidybayes()+
   theme(legend.position = "none")+
-  labs(title = "Model 2: age specific infection risk \nand interaction with intervention ",
+  labs(title = "Model 2: Main effect from intervention, (categorical) age specific infection risk \nand interaction between them",
+       caption = "@load_dependent")
+```
+Pairwise difference in effect from model 2
+```{r difference_categorical}
+
+mod2_a_diff <- df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod2_a,scale="response") %>% 
+  compare_levels(.value,by = group,fun=`/`) %>%
+  compare_levels(.value,by=age,comparison="pairwise") %>% 
+  summarise(post=scales::percent( mean(.value<0),accuracy = .1)) %>% 
+  ungroup() %>% 
+  select(-c(n,group))
+  
+df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod2_a,scale="response") %>% 
+  compare_levels(.value,by = group,fun = `/`) %>%
+  compare_levels(.value,by = age,comparison="pairwise") %>% 
+  ggplot(aes(x=.value,y=age,fill=after_stat(x>0)))+ 
+  stat_slab(position="dodge",scale=0.6)+
+  stat_dotsinterval(side="bottom", quantiles=100,position ="dodge",scale=0.6,fill="grey")+
+  geom_text(aes(y=age,label=post,x=-0.8),data = mod2_a_diff,inherit.aes = FALSE)+
+  scale_fill_manual(values=c("lightblue","pink"))+
+  scale_y_discrete(name = "Age group")+
+  scale_x_continuous(name="Difference in relative risk")+
+  theme_tidybayes()+
+  theme(legend.position = "none")+
+  labs(title = "Difference in relative risk from intervention between age categories\nPosterior probability of more positive effect in left-hand group",
        caption = "@load_dependent")
 ```
 
@@ -240,7 +272,7 @@ df %>%
        caption = "@load_dependent")
 ```
 
-```{r plot_interaction_2b}
+```{r plot_interaction_3b}
 df %>% 
   modelr::data_grid(age,group,n=1) %>% 
   add_linpred_draws(mod3_b,scale="response") %>% 
@@ -258,54 +290,37 @@ df %>%
 
 ```
 
-Pairwise difference in effect from model 2
-```{r difference_categorical}
-df %>% 
-  modelr::data_grid(age,group,n=1) %>% 
-  add_linpred_draws(mod2_a,scale="response") %>% 
-  compare_levels(.value,by = group,fun = `/`) %>%
-  compare_levels(.value,by = age,comparison="pairwise",fun = `/`) %>% 
-  ggplot(aes(x=.value,y=age,fill=after_stat(x>1)))+ 
-  stat_slab(position="dodge",scale=0.6)+
-  stat_dotsinterval(side="bottom", quantiles=100,position ="dodge",scale=0.6,fill="grey")+
-  scale_fill_manual(values=c("lightblue","pink"))+
-  scale_y_discrete(name = "Age group")+
-  scale_x_continuous(name="Difference in relative risk")+
-  theme_tidybayes()+
-  theme(legend.position = "none")+
-  labs(title = "Difference in relative risk from intervention between age groups\n(categorical age)",
-       caption = "@load_dependent")
-```
-Pairwise difference in effect from model 3 b
+
+Pairwise difference in effect from model 3 b, the modelled monotonic interaction assumes higher effect with higher age, hence large posteroior probability of difference between age groups
 ```{r difference_monotonic}
+
+mod3_b_diff <- df %>% 
+  modelr::data_grid(age,group,n=1) %>% 
+  add_linpred_draws(mod3_b,scale="response") %>% 
+  compare_levels(.value,by = group,fun=`/`) %>%
+  compare_levels(.value,by=age,comparison="pairwise") %>% 
+  summarise(post=scales::percent( mean(.value<0),accuracy = .1)) %>% 
+  ungroup() %>% 
+  select(-c(n,group))
+
 df %>% 
   modelr::data_grid(age,group,n=1) %>% 
   add_linpred_draws(mod3_b,scale="response") %>% 
   compare_levels(.value,by = group,fun = `/`) %>%
-  compare_levels(.value,by = age,comparison="pairwise",fun = `/`) %>% 
+  compare_levels(.value,by = age,comparison="pairwise") %>% 
   ggplot(aes(x=.value,y=age,fill=after_stat(x>1)))+ 
   stat_slab(position="dodge",scale=0.6)+
   stat_dotsinterval(side="bottom", quantiles=100,position ="dodge",scale=0.6,fill="grey")+
+  geom_text(aes(y=age,label=post,x=-0.6),data = mod3_b_diff,inherit.aes = FALSE)+
   scale_fill_manual(values=c("lightblue","pink"))+
   scale_y_discrete(name = "Age group")+
   scale_x_continuous(name="Difference in relative risk")+
   theme_tidybayes()+
   theme(legend.position = "none")+
-  labs(title = "Difference in relative risk from intervention between age groups\n(monotonic age)",
+  labs(title = "Difference in relative risk from intervention between age groups\ngiven monontonic effect\nPosterior probability of more positive effect in left-hand group",
        caption = "@load_dependent")
 ```
-Posterior probability of difference according to model 2 a 
-```{r post_prob}
-df %>% 
-  modelr::data_grid(age,group,n=1) %>% 
-  add_linpred_draws(mod2_a,scale="response") %>% 
-  compare_levels(.value,by = group,fun=`/`) %>%
-  compare_levels(.value,by=age,comparison="pairwise") %>% 
-  summarise(`Posterior probability of difference in effect`=mean(.value<0)) %>% 
-  ungroup() %>% 
-  select(-c(group,n)) %>% 
-  knitr::kable()
-```
+
 
 ```{r plot_interaction_4}
 df %>% 
